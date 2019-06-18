@@ -1,0 +1,121 @@
+daml 1.2
+
+module Dwolla.Customers where
+
+import Dwolla.FundingSources
+import Dwolla.Transfers
+import Dwolla.Utils
+
+import DA.Optional
+
+
+type UnverifiedCustomerRequestCid = ContractId UnverifiedCustomerRequest
+type VerifiedCustomerRequestCid   = ContractId VerifiedCustomerRequest
+type CustomerCid                  = ContractId Customer
+
+
+template UnverifiedCustomerRequest
+  with
+    operator  : Party
+    user      : Party
+    firstName : Text
+    lastName  : Text
+    email     : Text
+    ipAddress : Text
+  where
+    signatory operator, user
+
+    controller operator can
+      UnverifiedCustomerRequest_Accept : CustomerCid
+        with
+          customerId : Text
+          created : Time
+          status : CustomerStatus
+        do
+          create Customer with customerType = personal, ..
+
+
+template VerifiedCustomerRequest
+  with
+    operator    : Party
+    user        : Party
+    firstName   : Text
+    lastName    : Text
+    email       : Text
+    address1    : Text
+    optAddress2 : Optional Text
+    city        : Text
+    state       : Text
+    postalCode  : Int
+    dateOfBirth : Text
+    ssn         : Text
+  where
+    signatory operator, user
+
+    controller operator can
+      VerifiedCustomerRequest_Accept : CustomerCid
+        with
+          customerId : Text
+          created : Time
+          status : CustomerStatus
+        do create Customer with customerType = personal, ..
+
+
+template Customer
+  with
+    operator     : Party
+    user         : Party
+    customerId   : Text
+    firstName    : Text
+    lastName     : Text
+    email        : Text
+    customerType : CustomerType
+    status       : CustomerStatus
+    created      : Time
+  where
+    signatory operator, user
+
+    controller user can
+      Customer_Retry : VerifiedCustomerRequestCid
+        with
+          dateOfBirth : Text
+          fullSSN : Text
+          optFirstName : Optional Text
+          optLastName : Optional Text
+          optEmail : Optional Text
+          address1 : Text
+          optAddress2 : Optional Text
+          city : Text
+          state : Text
+          postalCode : Int
+        do
+          assert (status == retry)
+          create VerifiedCustomerRequest
+            with
+              ssn = fullSSN
+              firstName = fromOptional firstName optFirstName
+              lastName = fromOptional lastName optLastName
+              email = fromOptional email optEmail
+              ..
+
+      Customer_Document : ()
+        do
+          assert (status == document)
+          return ()
+
+      nonconsuming Customer_UnverifiedFundingSourceRequest : UnverifiedFundingSourceRequestCid
+        with
+          routingNumber : Text
+          accountNumber : Text
+          bankAccountType : BankAccountType
+          name : Text
+        do create UnverifiedFundingSourceRequest with ..
+
+      nonconsuming Customer_SendFunds : ReceiveFundsRequestCid
+        with
+          fundingSourceId : Text
+          amount : Amount
+          to : Party
+        do
+          create ReceiveFundsRequest with
+            sender = user, receiver = to, senderSourceId = fundingSourceId, ..

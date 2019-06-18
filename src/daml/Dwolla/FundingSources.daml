@@ -1,0 +1,159 @@
+daml 1.2
+
+module Dwolla.FundingSources where
+
+import Dwolla.Utils
+
+type UnverifiedFundingSourceRequestCid   = ContractId UnverifiedFundingSourceRequest
+type FundingSourceCid                    = ContractId FundingSource
+type InitiateMicroDepositsRequestCid     = ContractId InitiateMicroDepositsRequest
+type MicroDepositsCid                    = ContractId MicroDeposits
+type FundingSourceVerificationRequestCid = ContractId FundingSourceVerificationRequest
+type FundingSourceVerificationCid        = ContractId FundingSourceVerification
+
+
+template UnverifiedFundingSourceRequest
+  with
+    operator        : Party
+    user            : Party
+    customerId      : Text
+    routingNumber   : Text
+    accountNumber   : Text
+    bankAccountType : BankAccountType
+    name            : Text
+  where
+    signatory operator, user
+
+    controller operator can
+      UnverifiedFundingSourceRequest_Accept : FundingSourceCid
+        with
+          fundingSourceId : Text
+          created : Time
+          channels : [ProcessingChannel]
+          bankName : Text
+        do
+          create FundingSource with
+            status = unverified
+            fundingSourceType = bank
+            optBalance = None
+            removed = False
+            ..
+
+
+template FundingSource
+  with
+    operator          : Party
+    user              : Party
+    fundingSourceId   : Text
+    status            : FundingSourceStatus
+    fundingSourceType : FundingSourceType
+    bankAccountType   : BankAccountType
+    name              : Text
+    created           : Time
+    optBalance        : Optional Balance
+    removed           : Bool
+    channels          : [ProcessingChannel]
+    bankName          : Text
+    -- optIavAccountHolders :
+    -- optFingerprint :
+  where
+    signatory operator, user
+
+    controller user can
+      nonconsuming FundingSource_InitiateMicroDeposits : InitiateMicroDepositsRequestCid
+        do create InitiateMicroDepositsRequest with ..
+
+    controller operator can
+      FundingSource_Verify : FundingSourceCid
+        with
+          verificationCid : FundingSourceVerificationCid
+        do
+          assert (status == unverified)
+          verification <- fetch verificationCid
+          assert (operator == verification.operator)
+          assert (user == verification.user)
+          assert (fundingSourceId == verification.fundingSourceId)
+          archive verificationCid
+          create this with status = verified
+
+
+template InitiateMicroDepositsRequest
+  with
+    operator        : Party
+    user            : Party
+    fundingSourceId : Text
+    bankAccountType : BankAccountType
+    name            : Text
+  where
+    signatory operator, user
+
+    controller operator can
+      InitiateMicroDepositsRequest_Accept : MicroDepositsCid
+        with
+          created : Time
+          status : MicroDepositsStatus
+          failure : Failure
+        do create MicroDeposits with ..
+
+      InitiateMicroDepositsRequest_Reject : ()
+        do return ()
+
+
+template MicroDeposits
+  with
+    operator        : Party
+    user            : Party
+    fundingSourceId : Text
+    bankAccountType : BankAccountType
+    name            : Text
+    created         : Time
+    status          : MicroDepositsStatus
+    failure         : Failure
+  where
+    signatory operator, user
+
+    controller operator can
+      MircroDeposits_UpdateStatus : MicroDepositsCid
+        with
+          newStatus : MicroDepositsStatus
+        do create this with status = newStatus
+
+    controller user can
+      nonconsuming MircroDeposits_Verify : FundingSourceVerificationRequestCid
+        with
+          amount1 : Amount
+          amount2 : Amount
+        do
+          assert (status == processed)
+          create FundingSourceVerificationRequest with ..
+
+
+template FundingSourceVerificationRequest
+  with
+    operator        : Party
+    user            : Party
+    fundingSourceId : Text
+    bankAccountType : BankAccountType
+    name            : Text
+    amount1         : Amount
+    amount2         : Amount
+  where
+    signatory operator, user
+
+    controller operator can
+      FundingSourceVerificationRequest_Accept : FundingSourceVerificationCid
+        do create FundingSourceVerification with ..
+
+      FundingSourceVerificationRequest_Reject : ()
+        do return ()
+
+
+template FundingSourceVerification
+  with
+    operator        : Party
+    user            : Party
+    fundingSourceId : Text
+    bankAccountType : BankAccountType
+    name            : Text
+  where
+    signatory operator, user

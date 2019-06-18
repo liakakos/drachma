@@ -1,0 +1,110 @@
+daml 1.2
+
+module Dwolla.Transfers where
+
+import Dwolla.FundingSources
+import Dwolla.Utils
+
+import DA.Optional
+
+
+type ReceiveFundsRequestCid = ContractId ReceiveFundsRequest
+type TransferAgreementCid = ContractId TransferAgreement
+type TransferRequestCid = ContractId TransferRequest
+type TransferCid = ContractId Transfer
+
+
+template ReceiveFundsRequest
+  with
+    operator       : Party
+    sender         : Party
+    receiver       : Party
+    senderSourceId : Text
+    amount         : Amount
+  where
+    signatory operator, sender
+
+    controller receiver can
+      ReceiveFundsRequest_AcceptFunds : TransferAgreementCid
+        with
+          receiverSourceId : Text
+        do create TransferAgreement with ..
+
+
+template TransferAgreement
+  with
+    operator         : Party
+    sender           : Party
+    receiver         : Party
+    senderSourceId   : Text
+    receiverSourceId : Text
+    amount           : Amount
+  where
+    signatory operator, sender, receiver
+
+    controller operator can
+      TransferAgreement_Validate : TransferRequestCid
+        with
+          senderFundingCid : FundingSourceCid
+          receiverFundingCid : FundingSourceCid
+          optClearing : Optional Clearing
+          optAchDetails : Optional AchDetails
+          optCorrelationId : Optional Text
+        do
+          senderSrc <- fetch senderFundingCid
+          assert (operator == senderSrc.operator)
+          assert (sender == senderSrc.user)
+          assert (senderSourceId == senderSrc.fundingSourceId)
+          assert (senderSrc.status == verified)
+          receiverSrc <- fetch receiverFundingCid
+          assert (operator == receiverSrc.operator)
+          assert (receiver == receiverSrc.user)
+          assert (receiverSourceId == senderSrc.fundingSourceId)
+          let clearing = fromOptional emptyClearing optClearing
+              achDetails = fromOptional emptyAchDetails optAchDetails
+              correlationId = fromOptional "" optCorrelationId
+          create TransferRequest with ..
+
+
+template TransferRequest
+  with
+    operator         : Party
+    sender           : Party
+    receiver         : Party
+    senderSourceId   : Text
+    receiverSourceId : Text
+    amount           : Amount
+    clearing         : Clearing
+    achDetails       : AchDetails
+    correlationId    : Text
+  where
+    signatory operator, sender, receiver
+
+    controller operator can
+      TransferRequest_Sent : ContractId Transfer
+        with
+          transferId : Text
+          status : TransferStatus
+          created : Time
+          individualAchId : Text
+        do
+          let metadata = ""
+          create Transfer with ..
+
+
+template Transfer
+  with
+    operator        : Party
+    sender          : Party
+    receiver        : Party
+    transferId      : Text
+    status          : TransferStatus
+    amount          : Amount
+    created         : Time
+    metadata        : Text
+    clearing        : Clearing
+    achDetails      : AchDetails
+    correlationId   : Text
+    individualAchId : Text
+  where
+    signatory operator, sender, receiver

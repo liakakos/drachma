@@ -1,0 +1,105 @@
+daml 1.2
+
+module Dwolla.Utils where
+
+
+type BankAccountType     = Text
+type FundingSourceStatus = Text
+type FundingSourceType   = Text
+type ProcessingChannel   = Text
+type CustomerStatus      = Text
+type CustomerType        = Text
+type MicroDepositsStatus = Text
+type TransferStatus      = Text
+type Balance             = Amount
+
+
+checking    : Text = "checking"
+savings     : Text = "savings"
+verified    : Text = "verified"
+unverified  : Text = "unverified"
+bank        : Text = "bank"
+balance     : Text = "balance"
+ach         : Text = "ach"
+wire        : Text = "wire"
+suspended   : Text = "suspended"
+retry       : Text = "retry"
+document    : Text = "document"
+personal    : Text = "personal"
+business    : Text = "business"
+receiveOnly : Text = "receive-only"
+pending     : Text = "pending"
+processed   : Text = "processed"
+failed      : Text = "failed"
+cancelled   : Text = "cancelled"
+
+
+bankAccountTypes      = [checking, savings]
+fundingSourceStatuses = [verified, unverified]
+fundingSourceTypes    = [bank, balance]
+processingChannels    = [ach, wire]
+customerStatuses      = [unverified, suspended, retry, document, verified]
+customerTypes         = [unverified, personal, business, receiveOnly]
+microDepositStatuses  = [pending, processed, failed]
+transferStatuses      = [processed, pending, cancelled, failed]
+
+
+isValid (ys : [t]) (x : t) = elem x ys
+
+
+validBankAccountType       = isValid bankAccountTypes
+validfundingSourceStatuses = isValid fundingSourceStatuses
+validFundingSourceType     = isValid fundingSourceTypes
+validProcessingChannel     = isValid processingChannels
+validCustomerStatuses      = isValid customerStatuses
+validCustomerTypes         = isValid customerTypes
+validMicroDepositStatuses  = isValid microDepositStatuses
+validTransferStatuses      = isValid transferStatuses
+
+
+data Amount = Amount
+  with
+    value    : Text
+    currency : Text
+  deriving (Eq, Show)
+
+
+data Failure = Failure
+  with
+    code        : Text
+    description : Text
+  deriving (Eq, Show)
+
+emptyFailure = Failure with code = "", description = ""
+
+
+data Clearing = Clearing
+  with
+    optSource : Optional Text
+    optDestination : Optional Text
+  deriving (Eq, Show)
+
+emptyClearing = Clearing with optSource = None, optDestination = None
+
+
+data AchDetail = AchDetail
+  with
+    addenda : [Text]
+    traceId : Text
+  deriving (Eq, Show)
+
+emptyAchDetail = AchDetail with addenda = [], traceId = ""
+
+
+data AchDetails = AchDetails
+  with
+    source      : AchDetail
+    destination : AchDetail
+  deriving (Eq, Show)
+
+emptyAchDetails = AchDetails with source = emptyAchDetail, destination = emptyAchDetail
+
+
+main = scenario do
+  debug (validBankAccountType "checking")
+  return ()

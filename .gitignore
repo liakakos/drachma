@@ -1,0 +1,8 @@
+target/
+*.log
+.idea
+*.iml
+.interfaces/
+.package-database/
+dist/
+

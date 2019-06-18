@@ -1,0 +1,74 @@
+daml 1.2
+
+module Dwolla.Onboarding where
+
+import Dwolla.Customers
+
+
+type OperatorCid       = ContractId Operator
+type UserInvitationCid = ContractId UserInvitation
+type UserCid           = ContractId User
+
+
+template Operator
+  with
+    operator : Party
+  where
+    signatory operator
+
+    controller operator can
+      nonconsuming Operator_InviteUser : UserInvitationCid
+        with
+          user : Party
+        do
+          create UserInvitation with ..
+
+
+template UserInvitation
+  with
+    operator : Party
+    user     : Party
+  where
+    signatory operator
+
+    controller user can
+      UserInvitation_Accept : UserCid
+        do create User with ..
+
+      UserInvitation_Reject : ()
+        do return ()
+
+    controller operator can
+      UserInvitation_Cancel : ()
+        do return ()
+
+
+template User
+  with
+    operator : Party
+    user     : Party
+  where
+    signatory operator, user
+
+    controller user can
+      nonconsuming User_CreateVerifiedCustomer : VerifiedCustomerRequestCid
+        with
+          firstName : Text
+          lastName : Text
+          email : Text
+          address1 : Text
+          optAddress2 : Optional Text
+          city : Text
+          state : Text
+          postalCode : Int
+          dateOfBirth : Text
+          ssn : Text
+        do create VerifiedCustomerRequest with ..
+
+      nonconsuming User_CreateUnverifiedCustomerRequest : UnverifiedCustomerRequestCid
+        with
+          firstName : Text
+          lastName : Text
+          email : Text
+          ipAddress : Text
+        do create UnverifiedCustomerRequest with ..
