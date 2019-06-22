@@ -42,6 +42,8 @@ template TransferAgreement
   where
     signatory operator, sender, receiver
 
+    ensure senderSourceId /= receiverSourceId
+
     controller operator can
       TransferAgreement_Validate : TransferRequestCid
         with
@@ -59,11 +61,14 @@ template TransferAgreement
           receiverSrc <- fetch receiverFundingCid
           assert (operator == receiverSrc.operator)
           assert (receiver == receiverSrc.user)
-          assert (receiverSourceId == senderSrc.fundingSourceId)
+          assert (receiverSourceId == receiverSrc.fundingSourceId)
           let clearing = fromOptional emptyClearing optClearing
               achDetails = fromOptional emptyAchDetails optAchDetails
               correlationId = fromOptional "" optCorrelationId
           create TransferRequest with ..
+
+      TransferAgreement_FailValidation : ()
+        do return ()
 
 
 template TransferRequest
