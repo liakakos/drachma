@@ -67,7 +67,7 @@ template TransferAgreement
               correlationId = fromOptional "" optCorrelationId
           create TransferRequest with ..
 
-      TransferAgreement_FailValidation : ()
+      TransferAgreement_Fail : ()
         do return ()
 
 

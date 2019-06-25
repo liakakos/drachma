@@ -25,6 +25,8 @@ template UnverifiedCustomerRequest
   where
     signatory operator, user
 
+    ensure validIp ipAddress
+
     controller operator can
       UnverifiedCustomerRequest_Accept : CustomerCid
         with
@@ -46,11 +48,13 @@ template VerifiedCustomerRequest
     optAddress2 : Optional Text
     city        : Text
     state       : Text
-    postalCode  : Int
+    postalCode  : Text
     dateOfBirth : Text
     ssn         : Text
   where
     signatory operator, user
+
+    ensure (validSsn ssn || validSsnSet4 ssn)
 
     controller operator can
       VerifiedCustomerRequest_Accept : CustomerCid
@@ -75,11 +79,14 @@ template Customer
   where
     signatory operator, user
 
+    ensure validCustomerType customerType
+      && validCustomerStatus status
+
     controller user can
       Customer_Retry : VerifiedCustomerRequestCid
         with
           dateOfBirth : Text
-          fullSSN : Text
+          fullSsn : Text
           optFirstName : Optional Text
           optLastName : Optional Text
           optEmail : Optional Text
@@ -87,12 +94,13 @@ template Customer
           optAddress2 : Optional Text
           city : Text
           state : Text
-          postalCode : Int
+          postalCode : Text
         do
           assert (status == retry)
+          assert (validSsn fullSsn)
           create VerifiedCustomerRequest
             with
-              ssn = fullSSN
+              ssn = fullSsn
               firstName = fromOptional firstName optFirstName
               lastName = fromOptional lastName optLastName
               email = fromOptional email optEmail

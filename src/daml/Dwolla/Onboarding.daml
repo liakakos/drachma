@@ -51,7 +51,7 @@ template User
     signatory operator, user
 
     controller user can
-      nonconsuming User_CreateVerifiedCustomer : VerifiedCustomerRequestCid
+      nonconsuming User_VerifiedCustomerRequest : VerifiedCustomerRequestCid
         with
           firstName : Text
           lastName : Text
@@ -60,12 +60,12 @@ template User
           optAddress2 : Optional Text
           city : Text
           state : Text
-          postalCode : Int
+          postalCode : Text
           dateOfBirth : Text
           ssn : Text
         do create VerifiedCustomerRequest with ..
 
-      nonconsuming User_CreateUnverifiedCustomerRequest : UnverifiedCustomerRequestCid
+      nonconsuming User_UnverifiedCustomerRequest : UnverifiedCustomerRequestCid
         with
           firstName : Text
           lastName : Text

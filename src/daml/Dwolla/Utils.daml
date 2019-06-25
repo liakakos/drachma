@@ -2,6 +2,8 @@ daml 1.2
 
 module Dwolla.Utils where
 
+import DA.Text
+
 
 type BankAccountType     = Text
 type FundingSourceStatus = Text
@@ -47,14 +49,51 @@ transferStatuses      = [processed, pending, cancelled, failed]
 isValid (ys : [t]) (x : t) = elem x ys
 
 
-validBankAccountType       = isValid bankAccountTypes
-validfundingSourceStatuses = isValid fundingSourceStatuses
-validFundingSourceType     = isValid fundingSourceTypes
-validProcessingChannel     = isValid processingChannels
-validCustomerStatuses      = isValid customerStatuses
-validCustomerTypes         = isValid customerTypes
-validMicroDepositStatuses  = isValid microDepositStatuses
-validTransferStatuses      = isValid transferStatuses
+validBankAccountType     = isValid bankAccountTypes
+validfundingSourceStatus = isValid fundingSourceStatuses
+validFundingSourceType   = isValid fundingSourceTypes
+validProcessingChannel   = isValid processingChannels
+validCustomerStatus      = isValid customerStatuses
+validCustomerType        = isValid customerTypes
+validMicroDepositStatus  = isValid microDepositStatuses
+validTransferStatus      = isValid transferStatuses
+
+
+validSsn: Text -> Bool
+validSsn ssn =
+  let parts = splitOn "-" ssn
+  in if (Prelude.length parts) == 3
+     then let partLen = [3, 2, 4]
+              zipped = zip parts partLen
+          in all (\(p,l) -> validSsnSet l p) zipped
+     else False
+
+
+validSsnSet: Int -> Text -> Bool
+validSsnSet len set | DA.Text.length set == len =
+  let optInt = parseInt set
+  in case optInt of
+    Some i -> i >= 0 && i < 10 ^ len
+    None -> False
+validSsnSet _ _ = False
+
+validSsnSet4 = validSsnSet 4
+
+
+validIp: Text -> Bool
+validIp ip =
+  let parts = splitOn "." ip
+  in if (Prelude.length parts) == 4
+  then all (\p -> validIpSet p) parts
+  else False
+
+
+validIpSet: Text -> Bool
+validIpSet set =
+  let optInt = parseInt set
+  in case optInt of
+    Some i -> i >= 0 && i <= 255
+    None -> False
 
 
 data Amount = Amount
@@ -102,4 +141,5 @@ emptyAchDetails = AchDetails with source = emptyAchDetail, destination = emptyAc
 
 main = scenario do
   debug (validBankAccountType "checking")
+  debug (validIp "192.168.1.1")
   return ()

@@ -5,4 +5,6 @@ target/
 .interfaces/
 .package-database/
 dist/
+__pycache__/
+*.py[cod]
 
