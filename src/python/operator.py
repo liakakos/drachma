@@ -1,9 +1,11 @@
 import logging
+import _thread
 from datetime import datetime
 from argparse import ArgumentParser
 
 from dazl import Network, exercise
 from dwollav2 import Client
+from flask import Flask, request, abort
 
 import constants as const
 
@@ -19,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--ledger_port', type=int, help="Ledger Port", default=6865)
     parser.add_argument('-v', '--log_level', type=str, choices=['ERROR', 'WARNING', 'INFO', 'DEBUG'],
                         help="Log Level", default='WARNING')
+    parser.add_argument('-w', '--webhook_url', type=str, help="HTTP Webhook Listener URL",
+                        default='http://localhost:5000')
 
     args = parser.parse_args()
 
@@ -34,8 +38,60 @@ if __name__ == '__main__':
     dwolla_hostname = client.api_url
     app_token = client.Auth.client()
 
+    webhooks = Flask(__name__)
+
     logging.basicConfig(level=args.log_level)
     LOG = logging.getLogger('operator')
+
+
+    def flask_thread():
+        print("starting flask thread")
+        webhooks.run(debug=False, use_reloader=False)
+
+
+    def delete_webhook_subsriptions():
+        webhook_subsriptions_resp = app_token.get('webhook-subscriptions')
+        LOG.debug(f"webhook_subsriptions_resp status: {webhook_subsriptions.status}, "
+                  f"headers: {webhook_subsriptions.headers}, "
+                  f"body: {webhook_subsriptions.body}")
+        for webhook in webhook_subsriptions_resp.body['_embedded']['webhook-subscriptions']:
+            app_token.delete(webhook['_links']['self']['href'])
+
+
+    def subscribe_to_webhooks():
+        request_body = {
+            'url': f'{args.webhook_url}/webhooks',
+            'secret': args.dwolla_app_secret
+        }
+        subscription_resp = app_token.post('webhook-subscriptions', request_body)
+        LOG.debug(f"subscription_resp status: {subscription_resp.status}, "
+                  f"headers: {subscription_resp.headers}, "
+                  f"body: {subscription_resp.body}")
+
+
+    @webhooks.route('/webhooks', methods=['POST'])
+    def on_webhook():
+        if request.method == 'POST':
+            webhook = request.json
+            topic = webhook['topic']
+            if topic == 'customer_microdeposits_completed':
+                micro_deposits_resp = app_token.get(webhook['_links']['resource']['href'])
+                LOG.debug(f"micro_deposits_resp status: {micro_deposits_resp.status}, "
+                          f"headers: {micro_deposits_resp.headers}, "
+                          f"body: {micro_deposits_resp.body}")
+
+                micro_deposits_cid, micro_deposits_cdata = operator.find_one(const.T_MICRO_DEPOSITS, {
+                    'fundingSourceId': webhook['resourceId'],
+                    'status': 'pending'
+                })
+
+                operator.submit_exercise(micro_deposits_cid, const.C_MICRO_DEPOSITS_UPDATE_STATUS, {
+                    'newStatus': 'processed'
+                })
+
+            return '', 200
+        else:
+            abort(400)
 
 
     @operator.ledger_created(const.T_UNVERIFIED_CUSTOMER_REQUEST)
@@ -312,5 +368,10 @@ if __name__ == '__main__':
             # 'individualAchId': transfer['individualAchId']
         })
 
+
+    _thread.start_new_thread(flask_thread, ())
+
+    delete_webhook_subsriptions()
+    subscribe_to_webhooks()
 
     network.run_forever()

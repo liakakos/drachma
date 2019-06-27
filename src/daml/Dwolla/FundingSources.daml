@@ -113,13 +113,13 @@ template MicroDeposits
     signatory operator, user
 
     controller operator can
-      MircroDeposits_UpdateStatus : MicroDepositsCid
+      MicroDeposits_UpdateStatus : MicroDepositsCid
         with
           newStatus : MicroDepositsStatus
         do create this with status = newStatus
 
     controller user can
-      nonconsuming MircroDeposits_Verify : FundingSourceVerificationRequestCid
+      nonconsuming MicroDeposits_Verify : FundingSourceVerificationRequestCid
         with
           amount1 : Amount
           amount2 : Amount
