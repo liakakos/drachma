@@ -4,6 +4,29 @@ module Main where
 
 import Dwolla.Customers()
 import Dwolla.FundingSources()
-import Dwolla.Onboarding()
+import Dwolla.Onboarding
 import Dwolla.Transfers()
 import Dwolla.Utils()
+
+
+setup = scenario do
+  -- declare parties
+  [alice, bob, operator] <- mapA getParty ["Alice", "Bob", "Operator"]
+  let users = [alice, bob]
+
+  -- Operator creates role contract
+  operatorCid <- operator `submit`
+    create Operator
+      with
+        operator
+
+  -- Operator invites Alice and Bob as a users
+  invitations <- mapA (\u ->
+    operator `submit` exercise operatorCid Operator_InviteUser
+      with user = u) users
+
+  -- Alice and Bob accept the invitation creating their role contracts
+  mapA (\(u,i) -> u `submit` exercise i UserInvitation_Accept
+    ) $ zip users invitations
+
+  return ()

@@ -49,7 +49,7 @@ template VerifiedCustomerRequest
     city        : Text
     state       : Text
     postalCode  : Text
-    dateOfBirth : Text
+    dateOfBirth : Date
     ssn         : Text
   where
     signatory operator, user
@@ -85,7 +85,7 @@ template Customer
     controller user can
       Customer_Retry : VerifiedCustomerRequestCid
         with
-          dateOfBirth : Text
+          dateOfBirth : Date
           fullSsn : Text
           optFirstName : Optional Text
           optLastName : Optional Text

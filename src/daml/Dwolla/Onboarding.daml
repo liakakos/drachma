@@ -61,7 +61,7 @@ template User
           city : Text
           state : Text
           postalCode : Text
-          dateOfBirth : Text
+          dateOfBirth : Date
           ssn : Text
         do create VerifiedCustomerRequest with ..
 
