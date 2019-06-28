@@ -36,6 +36,9 @@ template UnverifiedCustomerRequest
         do
           create Customer with customerType = personal, ..
 
+      UnverifiedCustomerRequest_Reject : ()
+        do return ()
+
 
 template VerifiedCustomerRequest
   with
@@ -63,6 +66,9 @@ template VerifiedCustomerRequest
           created : Time
           status : CustomerStatus
         do create Customer with customerType = personal, ..
+
+      VerifiedCustomerRequest_Reject : ()
+        do return ()
 
 
 template Customer
@@ -109,7 +115,7 @@ template Customer
       Customer_Document : ()
         do
           assert (status == document)
-          return ()
+          abort("document status not supported")
 
       nonconsuming Customer_UnverifiedFundingSourceRequest : UnverifiedFundingSourceRequestCid
         with
@@ -124,6 +130,9 @@ template Customer
           fundingSourceId : Text
           amount : Amount
           to : Party
+          optClearingSrc : Optional Text
+          optMetadata : Optional [Metadata]
         do
+          assert (status /= suspended && status /= deactivated)
           create ReceiveFundsRequest with
             sender = user, receiver = to, senderSourceId = fundingSourceId, ..

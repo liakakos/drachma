@@ -672,7 +672,7 @@ export const customViews = (userId, party, role) => ({
         title: "Metadata",
         createCell: ({rowData}) => ({
           type: "text",
-          value: DamlLfValue.toJSON(rowData.argument).metadata
+          value: JSON.stringify(DamlLfValue.toJSON(rowData.argument).metadata)
         }),
         sortable: true,
         width: 80,

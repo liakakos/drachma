@@ -21,13 +21,19 @@ template ReceiveFundsRequest
     receiver       : Party
     senderSourceId : Text
     amount         : Amount
+    optClearingSrc : Optional Text
+    optMetadata    : Optional [Metadata]
   where
     signatory operator, sender
+
+    ensure validMetaDataList (fromOptional [] optMetadata)
+      && validClearingSource (fromOptional standard optClearingSrc)
 
     controller receiver can
       ReceiveFundsRequest_AcceptFunds : TransferAgreementCid
         with
           receiverSourceId : Text
+          optClearingDest : Optional Text
         do create TransferAgreement with ..
 
 
@@ -39,17 +45,20 @@ template TransferAgreement
     senderSourceId   : Text
     receiverSourceId : Text
     amount           : Amount
+    optClearingSrc   : Optional Text
+    optClearingDest  : Optional Text
+    optMetadata      : Optional [Metadata]
   where
     signatory operator, sender, receiver
 
     ensure senderSourceId /= receiverSourceId
+      && validClearingDestination (fromOptional nextAvailable optClearingDest)
 
     controller operator can
       TransferAgreement_Validate : TransferRequestCid
         with
           senderFundingCid : FundingSourceCid
           receiverFundingCid : FundingSourceCid
-          optClearing : Optional Clearing
           optAchDetails : Optional AchDetails
           optCorrelationId : Optional Text
         do
@@ -62,9 +71,12 @@ template TransferAgreement
           assert (operator == receiverSrc.operator)
           assert (receiver == receiverSrc.user)
           assert (receiverSourceId == receiverSrc.fundingSourceId)
-          let clearing = fromOptional emptyClearing optClearing
+          let clearing = Clearing with
+                optSource = optClearingSrc
+                optDestination = optClearingDest
               achDetails = fromOptional emptyAchDetails optAchDetails
               correlationId = fromOptional "" optCorrelationId
+              metadata = fromOptional [] optMetadata
           create TransferRequest with ..
 
       TransferAgreement_Fail : ()
@@ -79,6 +91,7 @@ template TransferRequest
     senderSourceId   : Text
     receiverSourceId : Text
     amount           : Amount
+    metadata         : [Metadata]
     clearing         : Clearing
     achDetails       : AchDetails
     correlationId    : Text
@@ -86,15 +99,17 @@ template TransferRequest
     signatory operator, sender, receiver
 
     controller operator can
-      TransferRequest_Sent : ContractId Transfer
+      TransferRequest_Sent : TransferCid
         with
           transferId : Text
           status : TransferStatus
           created : Time
           individualAchId : Text
         do
-          let metadata = ""
           create Transfer with ..
+
+      TransferRequest_Reject : ()
+        do return ()
 
 
 template Transfer
@@ -106,10 +121,20 @@ template Transfer
     status          : TransferStatus
     amount          : Amount
     created         : Time
-    metadata        : Text
+    metadata        : [Metadata]
     clearing        : Clearing
     achDetails      : AchDetails
     correlationId   : Text
     individualAchId : Text
   where
     signatory operator, sender, receiver
+
+    controller operator can
+      Transfer_UpdateStatus : TransferCid
+        with
+          newStatus : Text
+          optIndividualAchId : Optional Text
+        do
+          assert (status == pending)
+          let newIndividualAchId = fromOptional individualAchId optIndividualAchId
+          create this with status = newStatus, individualAchId = newIndividualAchId

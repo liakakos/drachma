@@ -2,6 +2,7 @@ daml 1.2
 
 module Dwolla.Utils where
 
+import DA.List
 import DA.Text
 
 
@@ -16,31 +17,34 @@ type TransferStatus      = Text
 type Balance             = Amount
 
 
-checking    : Text = "checking"
-savings     : Text = "savings"
-verified    : Text = "verified"
-unverified  : Text = "unverified"
-bank        : Text = "bank"
-balance     : Text = "balance"
-ach         : Text = "ach"
-wire        : Text = "wire"
-suspended   : Text = "suspended"
-retry       : Text = "retry"
-document    : Text = "document"
-personal    : Text = "personal"
-business    : Text = "business"
-receiveOnly : Text = "receive-only"
-pending     : Text = "pending"
-processed   : Text = "processed"
-failed      : Text = "failed"
-cancelled   : Text = "cancelled"
+checking      : Text = "checking"
+savings       : Text = "savings"
+verified      : Text = "verified"
+unverified    : Text = "unverified"
+bank          : Text = "bank"
+balance       : Text = "balance"
+ach           : Text = "ach"
+wire          : Text = "wire"
+suspended     : Text = "suspended"
+retry         : Text = "retry"
+document      : Text = "document"
+personal      : Text = "personal"
+business      : Text = "business"
+receiveOnly   : Text = "receive-only"
+pending       : Text = "pending"
+processed     : Text = "processed"
+failed        : Text = "failed"
+cancelled     : Text = "cancelled"
+deactivated   : Text = "deactivated"
+standard      : Text = "standard"
+nextAvailable : Text = "next-available"
 
 
 bankAccountTypes      = [checking, savings]
 fundingSourceStatuses = [verified, unverified]
 fundingSourceTypes    = [bank, balance]
 processingChannels    = [ach, wire]
-customerStatuses      = [unverified, suspended, retry, document, verified]
+customerStatuses      = [unverified, suspended, retry, document, verified, deactivated]
 customerTypes         = [unverified, personal, business, receiveOnly]
 microDepositStatuses  = [pending, processed, failed]
 transferStatuses      = [processed, pending, cancelled, failed]
@@ -57,6 +61,8 @@ validCustomerStatus      = isValid customerStatuses
 validCustomerType        = isValid customerTypes
 validMicroDepositStatus  = isValid microDepositStatuses
 validTransferStatus      = isValid transferStatuses
+validClearingSource      = isValid [standard]
+validClearingDestination = isValid [nextAvailable]
 
 
 validSsn: Text -> Bool
@@ -94,6 +100,16 @@ validIpSet set =
   in case optInt of
     Some i -> i >= 0 && i <= 255
     None -> False
+
+
+validMetadata: Metadata -> Bool
+validMetadata md = DA.Text.length md.key < 255 && DA.Text.length md.value < 255
+
+
+validMetaDataList: [Metadata] -> Bool
+validMetaDataList [] = True
+validMetaDataList mdl =
+  Prelude.length mdl <= 10 && all validMetadata mdl && uniqueOn (.key) mdl
 
 
 data Amount = Amount
@@ -137,6 +153,13 @@ data AchDetails = AchDetails
   deriving (Eq, Show)
 
 emptyAchDetails = AchDetails with source = emptyAchDetail, destination = emptyAchDetail
+
+
+data Metadata = Metadata
+  with
+    key : Text
+    value : Text
+  deriving (Eq, Show)
 
 
 main = scenario do

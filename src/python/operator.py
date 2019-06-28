@@ -1,5 +1,6 @@
 import logging
 import _thread
+import re
 from datetime import datetime
 from argparse import ArgumentParser
 
@@ -51,9 +52,9 @@ if __name__ == '__main__':
 
     def delete_webhook_subsriptions():
         webhook_subsriptions_resp = app_token.get('webhook-subscriptions')
-        LOG.debug(f"webhook_subsriptions_resp status: {webhook_subsriptions.status}, "
-                  f"headers: {webhook_subsriptions.headers}, "
-                  f"body: {webhook_subsriptions.body}")
+        LOG.debug(f"webhook_subsriptions_resp status: {webhook_subsriptions_resp.status}, "
+                  f"headers: {webhook_subsriptions_resp.headers}, "
+                  f"body: {webhook_subsriptions_resp.body}")
         for webhook in webhook_subsriptions_resp.body['_embedded']['webhook-subscriptions']:
             app_token.delete(webhook['_links']['self']['href'])
 
@@ -72,22 +73,82 @@ if __name__ == '__main__':
     @webhooks.route('/webhooks', methods=['POST'])
     def on_webhook():
         if request.method == 'POST':
-            webhook = request.json
-            topic = webhook['topic']
-            if topic == 'customer_microdeposits_completed':
-                micro_deposits_resp = app_token.get(webhook['_links']['resource']['href'])
+            event = request.json
+            LOG.debug(f"EVENT RECEIVED topic: {event['topic']}, event: {event}")
+
+            match = re.search('customer_microdeposits_(.+)', event['topic'])
+            if match:
+                micro_deposits_status = match.group(1)
+
+                if micro_deposits_status == 'added':
+                    return '', 200  # nothing to do
+
+                micro_deposits_resp = app_token.get(event['_links']['resource']['href'])
                 LOG.debug(f"micro_deposits_resp status: {micro_deposits_resp.status}, "
                           f"headers: {micro_deposits_resp.headers}, "
                           f"body: {micro_deposits_resp.body}")
 
                 micro_deposits_cid, micro_deposits_cdata = operator.find_one(const.T_MICRO_DEPOSITS, {
-                    'fundingSourceId': webhook['resourceId'],
+                    'fundingSourceId': event['resourceId'],
                     'status': 'pending'
                 })
 
-                operator.submit_exercise(micro_deposits_cid, const.C_MICRO_DEPOSITS_UPDATE_STATUS, {
-                    'newStatus': 'processed'
+                if micro_deposits_status == 'completed':
+                    operator.submit_exercise(micro_deposits_cid, const.C_MICRO_DEPOSITS_UPDATE_STATUS, {
+                        'newStatus': 'processed',
+                        'optFailure': micro_deposits_cdata.get('failure', None)
+                    })
+                elif micro_deposits_status == 'failed' or micro_deposits_status == 'maxattempts':
+                    operator.submit_exercise(micro_deposits_cid, const.C_MICRO_DEPOSITS_UPDATE_STATUS, {
+                        'newStatus': 'failed',
+                        'optFailure': micro_deposits_cdata.get('failure', None)
+                    })
+                else:
+                    LOG.warning(f"Received unknown webhook event topic: {event['topic']}. event: {event}")
+
+                return '', 200
+
+            match = re.search('customer_transfer_(.+)', event['topic'])
+            if match:
+                customer_transfer_status = match.group(1)
+
+                if customer_transfer_status == 'created':
+                    return '', 200  # nothing to do
+
+                transfer_resp = app_token.get(event['_links']['resource']['href'])
+                LOG.debug(f"transfer_resp status: {transfer_resp.status}, "
+                          f"headers: {transfer_resp.headers}, "
+                          f"body: {transfer_resp.body}")
+
+                transfer = transfer_resp.body
+
+                # Dwolla triggers this event twice. One for sender and one for receiver.
+                # User the sender to filter out one of them
+                if transfer['_links']['source']['href'] != event['_links']['customer']['href']:
+                    return '', 200
+
+                if customer_transfer_status == 'creation_failed':
+                    LOG.error(f"Failed to create Transfer. event: {event}")
+                    return '', 200
+
+                transfer_cid, transfer_cdata = operator.find_one(const.T_TRANSFER, {
+                    'transferId': event['resourceId'],
                 })
+
+                if customer_transfer_status == 'completed':
+                    operator.submit_exercise(transfer_cid, const.C_TRANSFER_UPDATE_STATUS, {
+                        'newStatus': 'processed',
+                        'optIndividualAchId': transfer.get('individualAchId', None)
+                    })
+                elif customer_transfer_status == 'failed' or customer_transfer_status == 'cancelled':
+                    operator.submit_exercise(transfer_cid, const.C_TRANSFER_UPDATE_STATUS, {
+                        'newStatus': customer_transfer_status,
+                        'optIndividualAchId': None
+                    })
+                else:
+                    LOG.warning(f"Received unknown webhook event topic: {event['topic']}. event: {event}")
+
+                return '', 200
 
             return '', 200
         else:
@@ -111,7 +172,8 @@ if __name__ == '__main__':
                   f"body: {new_customer_resp.body}")
 
         if new_customer_resp.status >= 400:
-            return
+            LOG.error(f"Could not create Unverified Customer. response: {new_customer_resp}")
+            return exercise(event.cid, const.C_UNVERIFIED_CUSTOMER_REQUEST_REJECT, {})
 
         customer_resp = app_token.get(new_customer_resp.headers['location'])
         LOG.debug(f"customer status: {customer_resp.status}, "
@@ -151,7 +213,8 @@ if __name__ == '__main__':
                   f"body: {new_customer_resp.body}")
 
         if new_customer_resp.status >= 400:
-            return
+            LOG.error(f"Could not create Verified Customer. response: {new_customer_resp}")
+            return exercise(event.cid, const.C_VERIFIED_CUSTOMER_REQUEST_REJECT, {})
 
         customer_resp = app_token.get(new_customer_resp.headers['location'])
         LOG.debug(f"customer status: {customer_resp.status}, "
@@ -185,7 +248,8 @@ if __name__ == '__main__':
                   f"body: {new_funding_source_resp.body}")
 
         if new_funding_source_resp.status >= 400:
-            return
+            LOG.error(f"Could not create Unverified Funding Source. response: {new_funding_source_resp}")
+            return exercise(event.cid, const.C_UNVERIFIED_FUNDING_SOURCE_REQUEST_REJECT, {})
 
         funding_source_resp = app_token.get(new_funding_source_resp.headers['location'])
         LOG.debug(f"funding_source_resp status: {funding_source_resp.status}, "
@@ -211,6 +275,7 @@ if __name__ == '__main__':
                   f"body: {new_micro_deposits_resp.body}")
 
         if new_micro_deposits_resp.status >= 400:
+            LOG.error(f"Could not initiate Micro Deposits. response: {new_micro_deposits_resp}")
             return exercise(event.cid, const.C_INITIATE_MICRO_DEPOSITS_REQUEST_REJECT, {})
 
         micro_deposits_resp = app_token.get(f"{funding_source_url}/micro-deposits")
@@ -223,14 +288,8 @@ if __name__ == '__main__':
         return exercise(event.cid, const.C_INITIATE_MICRO_DEPOSITS_REQUEST_ACCEPT, {
             'created': datetime.strptime(micro_deposits['created'], "%Y-%m-%dT%H:%M:%S.%fZ"),
             'status': micro_deposits['status'],
-            'failure': {
-                'code': '',
-                'description': ''
-            }
+            'optFailure': micro_deposits.get('failure', None)
         })
-
-
-    # need hook for changing the status of micro-deposits
 
 
     @operator.ledger_created(const.T_FUNDING_SOURCE_VERIFICATION_REQUEST)
@@ -255,6 +314,7 @@ if __name__ == '__main__':
                   f"body: {verify_micro_deposits_resp.body}")
 
         if verify_micro_deposits_resp.status != 200:
+            LOG.error(f"Could not verify micro deposits. response: {verify_micro_deposits_resp}")
             return exercise(event.cid, const.C_FUNDING_SOURCE_VERIFICATION_REQUEST_REJECT, {})
 
         return exercise(event.cid, const.C_FUNDING_SOURCE_VERIFICATION_REQUEST_ACCEPT, {})
@@ -282,7 +342,7 @@ if __name__ == '__main__':
     def on_transfer_agreement(event):
         cdata = event.cdata
         LOG.debug(f"TRANSFER_AGREEMENT cdata: {cdata}")
-        sender_funding_source_cid, sender_funding_source_cdata = event.acs_find_one(
+        sender_matches = operator.find_active(
             const.T_FUNDING_SOURCE, {
                 'operator': cdata['operator'],
                 'user': cdata['sender'],
@@ -290,37 +350,28 @@ if __name__ == '__main__':
                 'status': 'verified'
             }
         )
-        LOG.debug(f"found sender funding source cid: {sender_funding_source_cid}, "
-                  f"cdata: {sender_funding_source_cdata}")
+        if sender_matches:
+            LOG.debug(f"found sender funding source: {next(iter(sender_matches.items()))}")
 
-        receiver_funding_source_cid, receiver_funding_source_cdata = event.acs_find_one(
+        receiver_matches = operator.find_active(
             const.T_FUNDING_SOURCE, {
                 'operator': cdata['operator'],
                 'user': cdata['receiver'],
                 'fundingSourceId': cdata['receiverSourceId']
             }
         )
-        LOG.debug(f"found receiver funding source cid: {receiver_funding_source_cid}, "
-                  f"cdata: {receiver_funding_source_cdata}")
+        if receiver_matches:
+            LOG.debug(f"found receiver funding source: {next(iter(receiver_matches.items()))}")
+
+        if not sender_matches or not receiver_matches:
+            LOG.error(f"Could not find funding sources with required properties to validate transfer agreement")
+            return exercise(event.cid, const.C_TRANSFER_AGREEMENT_FAIL, {})
 
         return exercise(event.cid, const.C_TRANSFER_AGREEMENT_VALIDATE, {
-            'senderFundingCid': sender_funding_source_cid,
-            'receiverFundingCid': receiver_funding_source_cid,
-            'optClearing': {
-                'optSource': '',
-                'optDestination': ''
-            },
-            'optAchDetails': {
-                'source': {
-                    'addenda': [''],
-                    'traceId': ''
-                },
-                'destination': {
-                    'addenda': [''],
-                    'traceId': ''
-                }
-            },
-            'optCorrelationId': "one-two-three"
+            'senderFundingCid': next(iter(sender_matches.keys())),
+            'receiverFundingCid': next(iter(receiver_matches.keys())),
+            'optAchDetails': None,  # not supported (business customers only)
+            'optCorrelationId': None
         })
 
 
@@ -342,8 +393,20 @@ if __name__ == '__main__':
                 'currency': cdata['amount']['currency'],
                 'value': cdata['amount']['value']
             },
-            'correlationId': cdata['correlationId']
         }
+
+        if cdata['metadata']:
+            request_body['metadata'] = {md['key']: md['value'] for md in cdata['metadata']}
+
+        if cdata['clearing']['optSource'] or cdata['clearing']['optDestination']:
+            request_body['clearing'] = {}
+            if cdata['clearing']['optSource']:
+                request_body['clearing']['source'] = cdata['clearing']['optSource']
+            if cdata['clearing']['optDestination']:
+                request_body['clearing']['destination'] = cdata['clearing']['optDestination']
+
+        if cdata['correlationId']:
+            request_body['correlationId'] = cdata['correlationId']
 
         new_transfer_resp = app_token.post('transfers', request_body)
         LOG.debug(f"new_transfer_resp status: {new_transfer_resp.status}, "
@@ -351,7 +414,8 @@ if __name__ == '__main__':
                   f"body: {new_transfer_resp.body}")
 
         if new_transfer_resp.status >= 400:
-            return  # should exercise a fail choice
+            LOG.error(f"Could not submit transfer. response: {new_transfer_resp}")
+            return exercise(event.cid, const.C_TRANSFER_REQUEST_REJECT, {})
 
         transfer_resp = app_token.get(new_transfer_resp.headers['location'])
         LOG.debug(f"transfer_resp status: {transfer_resp.status}, "
@@ -364,8 +428,7 @@ if __name__ == '__main__':
             'transferId': transfer['id'],
             'status': transfer['status'],
             'created': datetime.strptime(transfer['created'], "%Y-%m-%dT%H:%M:%S.%fZ"),
-            'individualAchId': ''
-            # 'individualAchId': transfer['individualAchId']
+            'individualAchId': transfer.get('individualAchId', '')
         })
 
 

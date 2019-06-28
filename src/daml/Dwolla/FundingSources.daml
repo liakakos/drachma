@@ -4,6 +4,9 @@ module Dwolla.FundingSources where
 
 import Dwolla.Utils
 
+import DA.Optional
+
+
 type UnverifiedFundingSourceRequestCid   = ContractId UnverifiedFundingSourceRequest
 type FundingSourceCid                    = ContractId FundingSource
 type InitiateMicroDepositsRequestCid     = ContractId InitiateMicroDepositsRequest
@@ -38,6 +41,9 @@ template UnverifiedFundingSourceRequest
             optBalance = None
             removed = False
             ..
+
+      UnverifiedFundingSourceRequest_Reject : ()
+        do return ()
 
 
 template FundingSource
@@ -92,8 +98,10 @@ template InitiateMicroDepositsRequest
         with
           created : Time
           status : MicroDepositsStatus
-          failure : Failure
-        do create MicroDeposits with ..
+          optFailure : Optional Failure
+        do
+          let failure = fromOptional emptyFailure optFailure
+          create MicroDeposits with ..
 
       InitiateMicroDepositsRequest_Reject : ()
         do return ()
@@ -116,7 +124,10 @@ template MicroDeposits
       MicroDeposits_UpdateStatus : MicroDepositsCid
         with
           newStatus : MicroDepositsStatus
-        do create this with status = newStatus
+          optFailure : Optional Failure
+        do
+          let newFailure = fromOptional failure optFailure
+          create this with status = newStatus, failure = newFailure
 
     controller user can
       nonconsuming MicroDeposits_Verify : FundingSourceVerificationRequestCid
