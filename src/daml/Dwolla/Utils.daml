@@ -157,7 +157,7 @@ emptyAchDetails = AchDetails with source = emptyAchDetail, destination = emptyAc
 
 data Metadata = Metadata
   with
-    key : Text
+    key   : Text
     value : Text
   deriving (Eq, Show)
 
